@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Browse uploads</title>
+    <style>
+body{
+  font-family:system-ui,Segoe UI,Arial;
+  padding:1rem;
+  max-width:720px;
+  margin:auto;
+  background-color:#121212;
+  color:#eee;
+  font-size:1.125rem;
+  line-height:1.5;
+}
+a,
+button{
+  color:#6200ee;
+  text-decoration:none;
+  cursor:pointer;
+}
+ul{
+  list-style:none;
+  padding-left:0;
+}
+li{
+  margin:0.5rem 0;
+}
+</style>
+  </head>
+  <body>
+    <h1>Uploads</h1>
+    {% if current %}
+      <p><a href="{{ url_for('browse') }}">&larr; root</a></p>
+    {% endif %}
+    <ul>
+      {% for entry in entries %}
+        <li>
+          {% if entry.type == 'dir' %}
+            📁 <a href="{{ url_for('browse', req_path=(current ~ '/' if current else '') ~ entry.name) }}">{{ entry.name }}/</a>
+          {% else %}
+            📄 <a href="{{ url_for('uploaded_file', filename=(current ~ '/' if current else '') ~ entry.name) }}" target="_blank">{{ entry.name }}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
