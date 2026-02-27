@@ -48,22 +48,53 @@ def login():
 def upload():
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
-    if 'file' not in request.files:
-        return jsonify({'error': 'no file uploaded'}), 400
-    f = request.files['file']
-    if f.filename == '':
-        return jsonify({'error': 'empty filename'}), 400
-    filename = secure_filename(f.filename)
-    target = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    f.save(target)
-
+    
     # if the client appears to be a browser (prefers html) then redirect to the
-    # browse UI so users can immediately navigate the uploaded files.
-    if request.accept_mimetypes.accept_html and not request.accept_mimetypes.accept_json:
-        return redirect(url_for('browse'))
+    # result page so users can see success/failure and navigate options.
+    is_browser = request.accept_mimetypes.accept_html and not request.accept_mimetypes.accept_json
+    
+    try:
+        if 'file' not in request.files:
+            error_msg = 'no file uploaded'
+            if is_browser:
+                return redirect(url_for('result', status='failure', error=error_msg))
+            return jsonify({'error': error_msg}), 400
+        
+        f = request.files['file']
+        if f.filename == '':
+            error_msg = 'empty filename'
+            if is_browser:
+                return redirect(url_for('result', status='failure', error=error_msg))
+            return jsonify({'error': error_msg}), 400
+        
+        filename = secure_filename(f.filename)
+        target = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        f.save(target)
 
-    # otherwise return machine-readable JSON (used by curl/clients)
-    return jsonify({'ok': True, 'filename': filename, 'path': target})
+        # if the client appears to be a browser, redirect to the result page
+        if is_browser:
+            return redirect(url_for('result', status='success', filename=filename))
+
+        # otherwise return machine-readable JSON (used by curl/clients)
+        return jsonify({'ok': True, 'filename': filename, 'path': target})
+    
+    except Exception as e:
+        error_msg = str(e)
+        if is_browser:
+            return redirect(url_for('result', status='failure', error=error_msg))
+        return jsonify({'error': error_msg}), 500
+
+
+@app.route('/result')
+def result():
+    if AUTH_MODE == 'password' and not check_auth():
+        return redirect(url_for('login', next=request.path))
+    
+    status = request.args.get('status', 'failure')
+    filename = request.args.get('filename', '')
+    error = request.args.get('error', 'Unknown error')
+    
+    return render_template('result.html', status=status, filename=filename, error=error)
 
 
 @app.route('/uploads/<path:filename>')
