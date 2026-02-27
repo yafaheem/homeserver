@@ -9,7 +9,12 @@ UPLOAD_TOKEN = os.environ.get('UPLOAD_TOKEN', 'changeme')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'password')
 
 app = Flask(__name__)
-app.config.update(UPLOAD_FOLDER=UPLOAD_FOLDER, SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=4 * 1024 * 1024 * 1024)
+# limit uploads to 3 GiB (Flask will reject requests larger than this)
+app.config.update(
+    UPLOAD_FOLDER=UPLOAD_FOLDER,
+    SECRET_KEY=SECRET_KEY,
+    MAX_CONTENT_LENGTH=3 * 1024 * 1024 * 1024,
+)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
@@ -131,4 +136,10 @@ def browse(req_path):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), debug=os.environ.get('DEBUG', '') == '1')
+    # enable threading to allow concurrent uploads from multiple clients
+    app.run(
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', '5000')),
+        debug=os.environ.get('DEBUG', '') == '1',
+        threaded=True,
+    )
