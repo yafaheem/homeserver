@@ -74,8 +74,15 @@ def upload():
         
         filename = secure_filename(f.filename)
         target = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        f.save(target)
-
+        
+        # Stream the file in chunks to handle large uploads efficiently
+        with open(target, 'wb') as dest:
+            while True:
+                chunk = f.stream.read(8192)  # Read in 8KB chunks
+                if not chunk:
+                    break
+                dest.write(chunk)
+        
         # if the client appears to be a browser, redirect to the result page
         if is_browser:
             return redirect(url_for('result', status='success', filename=filename))
