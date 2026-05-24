@@ -55,6 +55,8 @@ pre{
       <label>Upload token (header also supported)
         <input name="token" placeholder="paste token here" />
       </label>
+      {% elif auth_mode == 'basic' %}
+      <p>Use HTTP Basic auth to access this page and upload files.</p>
       {% endif %}
       <button type="submit">Upload</button>
     </form>
@@ -70,6 +72,9 @@ curl -H "X-UPLOAD-TOKEN: yourtoken" -F "file=@photo.jpg" http://YOUR_PC:5000/upl
 
 # token as query
 curl -F "file=@photo.jpg" "http://YOUR_PC:5000/upload?token=yourtoken"
+
+# basic auth
+curl -u admin:password -F "file=@photo.jpg" http://YOUR_PC:5000/upload
     </pre>
   </body>
 </html>

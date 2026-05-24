@@ -1,12 +1,16 @@
-from flask import Flask, request, redirect, url_for, render_template, flash, session, jsonify, send_from_directory
+from flask import Flask, request, redirect, url_for, render_template, flash, session, jsonify, send_from_directory, Response
+import base64
+import hmac
 import os
 from werkzeug.utils import secure_filename
 
 UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'uploads')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret')
-AUTH_MODE = os.environ.get('AUTH_MODE', 'none')  # none | token | password
+AUTH_MODE = os.environ.get('AUTH_MODE', 'none')  # none | token | password | basic
 UPLOAD_TOKEN = os.environ.get('UPLOAD_TOKEN', 'changeme')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'password')
+BASIC_USERNAME = os.environ.get('BASIC_USERNAME', 'admin')
+BASIC_PASSWORD = os.environ.get('BASIC_PASSWORD', 'password')
 
 app = Flask(__name__)
 # limit uploads to 3 GiB (Flask will reject requests larger than this)
@@ -18,6 +22,23 @@ app.config.update(
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
+def _check_basic_auth():
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Basic '):
+        return False
+
+    try:
+        decoded = base64.b64decode(auth_header.split(' ', 1)[1], validate=True).decode('utf-8')
+    except (ValueError, UnicodeDecodeError):
+        return False
+
+    if ':' not in decoded:
+        return False
+
+    username, password = decoded.split(':', 1)
+    return hmac.compare_digest(username, BASIC_USERNAME) and hmac.compare_digest(password, BASIC_PASSWORD)
+
+
 def check_auth():
     if AUTH_MODE == 'none':
         return True
@@ -26,13 +47,34 @@ def check_auth():
         return token == UPLOAD_TOKEN
     if AUTH_MODE == 'password':
         return session.get('logged_in') is True
+    if AUTH_MODE == 'basic':
+        return _check_basic_auth()
     return False
+
+
+def auth_challenge():
+    return Response('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="File Server"'})
+
+
+def require_auth(browser_fallback=False):
+    if check_auth():
+        return None
+
+    if AUTH_MODE == 'password' and browser_fallback:
+        return redirect(url_for('login', next=request.path))
+    if AUTH_MODE == 'basic':
+        return auth_challenge()
+
+    if request.accept_mimetypes.accept_html and not request.accept_mimetypes.accept_json:
+        return render_template('result.html', status='failure', error='Unauthorized'), 401
+    return jsonify({'error': 'unauthorized'}), 401
 
 
 @app.route('/', methods=['GET'])
 def index():
-    if AUTH_MODE == 'password' and not check_auth():
-        return redirect(url_for('login', next=request.path))
+    auth_response = require_auth(browser_fallback=True)
+    if auth_response:
+        return auth_response
     return render_template('index.html', auth_mode=AUTH_MODE)
 
 
@@ -51,9 +93,10 @@ def login():
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    if not check_auth():
-        return jsonify({'error': 'unauthorized'}), 401
-    
+    auth_response = require_auth()
+    if auth_response:
+        return auth_response
+
     # if the client appears to be a browser (prefers html) then redirect to the
     # result page so users can see success/failure and navigate options.
     is_browser = request.accept_mimetypes.accept_html and not request.accept_mimetypes.accept_json
@@ -99,18 +142,22 @@ def upload():
 
 @app.route('/result')
 def result():
-    if AUTH_MODE == 'password' and not check_auth():
-        return redirect(url_for('login', next=request.path))
-    
+    auth_response = require_auth(browser_fallback=True)
+    if auth_response:
+        return auth_response
+
     status = request.args.get('status', 'failure')
     filename = request.args.get('filename', '')
     error = request.args.get('error', 'Unknown error')
-    
+
     return render_template('result.html', status=status, filename=filename, error=error)
 
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
+    auth_response = require_auth()
+    if auth_response:
+        return auth_response
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
@@ -118,9 +165,9 @@ def uploaded_file(filename):
 @app.route('/browse/', defaults={'req_path': ''})
 @app.route('/browse/<path:req_path>')
 def browse(req_path):
-    # simple authentication check for UI, same as other pages
-    if AUTH_MODE == 'password' and not check_auth():
-        return redirect(url_for('login', next=request.path))
+    auth_response = require_auth(browser_fallback=True)
+    if auth_response:
+        return auth_response
 
     base = app.config['UPLOAD_FOLDER']
     # compute absolute path and ensure it's within uploads folder
@@ -136,7 +183,9 @@ def browse(req_path):
                 entries.append({'name': entry, 'type': 'dir'})
             else:
                 entries.append({'name': entry, 'type': 'file'})
-        return render_template('browse.html', entries=entries, current=req_path)
+
+        parent = os.path.dirname(req_path) if req_path else ''
+        return render_template('browse.html', entries=entries, current=req_path, parent=parent)
     else:
         # if it's a file, just serve it
         return send_from_directory(base, req_path)

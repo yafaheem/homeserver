@@ -1,4 +1,5 @@
 Flask>=2.0
 Werkzeug>=2.0
 python-dotenv>=0.21.0
-gunicorn
+waitress
+# gunicorn is included for Linux/Unix deployment, but on Windows use waitress instead.
